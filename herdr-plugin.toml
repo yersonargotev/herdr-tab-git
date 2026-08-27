@@ -1,0 +1,33 @@
+id = "hasuwini77.tab-git"
+name = "Tab Git Status"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Git branch and status in the Spaces sidebar that follow the active tab instead of the first one"
+platforms = ["linux", "macos"]
+
+[[startup]]
+command = ["sh", "run.sh", "--all"]
+
+[[events]]
+on = "pane.focused"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "workspace.focused"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "pane.created"
+command = ["sh", "run.sh"]
+
+[[actions]]
+id = "refresh"
+title = "Refresh tab git status"
+contexts = ["workspace"]
+command = ["sh", "run.sh", "--all"]
+
+[[actions]]
+id = "clear"
+title = "Clear tab git tokens"
+contexts = ["workspace"]
+command = ["sh", "run.sh", "--clear"]
