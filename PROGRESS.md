@@ -22,9 +22,11 @@ and exited 0.
 
 **Two things measurement changed:**
 
-- `herdr plugin link` does **not** validate event names — it happily accepted
-  `totally.bogus.event`. So a successful link proves nothing about whether a
-  hook will fire; only the plugin log does.
+- `herdr plugin link` **does** validate event names and returns
+  `warnings: ["unknown event '...'"]`, and `herdr plugin list` prints
+  `warning: unknown event '...'`. An earlier note here claimed the opposite;
+  that was wrong — the warning is nested under `result.plugin.warnings`, not
+  `result.warnings`, so it is easy to miss when scripting against the JSON.
 - Both `pane.focused` and `workspace.focused` fire for one tab switch, and the
   first implementation recomputed git for every workspace at ~820ms per hook.
   Since a focus change cannot alter another workspace's active tab, focus events
