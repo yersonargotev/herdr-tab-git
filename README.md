@@ -1,112 +1,76 @@
-# Herdr Tab Git Status
+# Herdr Tab Git Tokens
 
-Git branch and status in the Herdr **Spaces** sidebar that follow the *active tab*
-instead of the first one.
+An independently maintained Herdr plugin based on [hasuwini77/herdr-tab-git](https://github.com/hasuwini77/herdr-tab-git). It publishes compact Git tokens for each Space's active tab, using that tab's focused pane and live `foreground_cwd`. The original MIT license and Edwin's copyright remain in [LICENSE](LICENSE).
 
-![herdr](https://img.shields.io/badge/herdr-%3E%3D0.8.0-blue) ![license](https://img.shields.io/badge/license-MIT-green)
-
-## Why
-
-Herdr's built-in `branch` and `git_status` tokens resolve against the workspace
-*identity* cwd. In `src/workspace.rs`:
-
-```rust
-pub fn resolved_identity_cwd_from(&self, ...) -> Option<PathBuf> {
-    self.tabs
-        .first()
-        .and_then(|tab| tab.cwd_for_pane(tab.root_pane, terminals, terminal_runtimes))
-        .or_else(|| Some(self.identity_cwd.clone()))
-}
-```
-
-`tabs.first()` and `tab.root_pane` are both fixed, so the branch shown is always
-the first tab's repo. It follows a `cd` *inside* that pane, but never follows you
-to another tab. That is deliberate — a Space is meant to have a stable identity —
-but it is unhelpful when one Space holds two repos
-([discussion #2988](https://github.com/herdrdev/herdr/discussions/2988)).
-
-This plugin publishes `$gitbranch` and `$gitstatus` workspace tokens resolved
-from the **active tab's focused pane**, using only the public
-`herdr workspace report-metadata` API. Nothing is patched.
+Herdr's built-in `branch` and `git_status` use a Space's identity directory. These tokens follow the active tab, including the last active tab in an inactive Space. Herdr 0.9.1 or newer, Node.js and Git are required on macOS or Linux.
 
 ## Install
 
 ```sh
-git clone https://github.com/hasuwini77/herdr-tab-git ~/dev/herdr-tab-git
-herdr plugin link ~/dev/herdr-tab-git
+herdr plugin install yersonargotev/herdr-tab-git
+# For a local checkout: herdr plugin link /path/to/herdr-tab-git
+herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 ```
 
-Then reference the tokens in `~/.config/herdr/config.toml`:
+The refresh action populates tokens immediately after linking or installing. Startup and focus hooks also refresh them. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
+
+Add a compact second row to `~/.config/herdr/config.toml`:
 
 ```toml
 [ui.sidebar.spaces]
 rows = [
   ["state_icon", "workspace"],
-  ["$gitbranch", "$gitstatus"],
+  [{ token = "$gitbranch", fg = "#89dceb" },
+   { token = "$gitconflicted", fg = "#cba6f7" },
+   { token = "$gitadded", fg = "#a6e3a1" },
+   { token = "$gitmodified", fg = "#f9e2af" },
+   { token = "$gitdeleted", fg = "#f38ba8" },
+   { token = "$gituntracked", fg = "#89b4fa" },
+   { token = "$gitahead", fg = "#94e2d5" },
+   { token = "$gitbehind", fg = "#fab387" },
+   { token = "$gitclean", fg = "#6c7086" }],
 ]
 ```
 
-```sh
-herdr config check && herdr server reload-config
-```
+Each category is a separate token, so Herdr can style it independently. Omit less useful token names from the row if your sidebar is very narrow. The plugin still maintains the full token set.
 
-Status format is `●<dirty> ↑<ahead> ↓<behind>`, or `clean`.
+| Token | Value | Meaning |
+| --- | --- | --- |
+| `$gitbranch` | `main`, `detached@abc1234` | Branch or detached commit |
+| `$gitadded` | `+2` | Added paths |
+| `$gitmodified` | `~2` | Modified or renamed paths |
+| `$gitdeleted` | `−2` | Deleted paths |
+| `$gituntracked` | `?2` | Untracked paths |
+| `$gitconflicted` | `!2` | Unmerged paths |
+| `$gitahead` | `↑2` | Commits ahead of upstream |
+| `$gitbehind` | `↓2` | Commits behind upstream |
+| `$gitclean` | `clean` | Successful status with all counts zero |
 
-## Trade-off you are accepting
+Only nonzero categories are published. Each Git path contributes to one category, even when it has both staged and unstaged changes. The precedence is conflict, deletion, addition, modification. A staged addition with a later unstaged edit is added; a staged and unstaged modification is modified. A rename is one modified destination path; Git's old path is consumed but not counted again. An untracked directory is expanded into paths. Git's NUL delimited porcelain v1 format handles whitespace, quotes, and newlines in names. A missing upstream means zero ahead and behind. A failed or timed out Git command clears its tokens; it never produces `clean`.
 
-These tokens **replace** the built-ins in that row, they do not fall back to
-them. A Space whose active tab is not in a git repo shows nothing on that line,
-where `branch`/`git_status` would still show the first tab's repo. That is the
-point — but if most of your Spaces are single-repo, the built-ins are simpler
-and cost nothing.
+## Configuration and actions
 
-## Cost
-
-Event-driven, no daemon. Measured hook duration on Linux:
-
-| what | duration |
-| --- | --- |
-| focus event (focused workspace only) | ~170ms |
-| `--all` sweep (startup / manual refresh) | ~600-800ms |
-
-Herdr fires **both** `pane.focused` and `workspace.focused` for a single tab
-switch, so the hook runs twice. That is why focus events recompute only the
-focused workspace — a focus change cannot alter any other workspace's active
-tab. Recomputing everything on every event cost ~820ms per hook, twice per
-switch, which is what the `--all` split avoids.
-
-Git calls are capped by `timeoutMs` (default 1500) so a huge repo or a dead
-network remote can never hang a hook.
-
-## Configuration
-
-Optional, at `~/.config/herdr/plugins/config/hasuwini77.tab-git/config.json`
-(`herdr plugin config-dir hasuwini77.tab-git`):
+Optional `config.json` goes in `herdr plugin config-dir yersonargotev.tab-git` (normally `~/.config/herdr/plugins/config/yersonargotev.tab-git/`):
 
 ```json
-{
-  "branchToken": "gitbranch",
-  "statusToken": "gitstatus",
-  "cleanLabel": "clean",
-  "timeoutMs": 1500,
-  "enabled": true
-}
+{ "enabled": true, "timeoutMs": 1500, "pollMs": 3000 }
 ```
 
-## Actions
+`timeoutMs` is clamped to 100–10000 ms and `pollMs` to 1000–60000 ms. Git calls and Herdr CLI calls use timeouts. No shell interpolation or runtime network calls are used.
 
 ```sh
-herdr plugin action invoke refresh --plugin hasuwini77.tab-git   # full sweep
-herdr plugin action invoke clear   --plugin hasuwini77.tab-git   # drop all tokens
+herdr plugin action invoke refresh --plugin yersonargotev.tab-git
+herdr plugin action invoke clear --plugin yersonargotev.tab-git
 ```
 
-## Gotcha worth knowing
+`refresh` scans every Space and resumes automatic updates. `clear` removes every token and pauses automatic updates until `refresh`.
 
-`herdr config check` does **not** honour `HERDR_CONFIG_DIR` — it always
-validates your real `config.toml`. Back the file up before experimenting rather
-than validating a throwaway copy; a copy will report `config: ok` even when it
-contains obvious garbage.
+## Refresh cost and limits
+
+Herdr plugin hooks have no file change event, and startup hooks are one-shot ([Herdr plugin documentation](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx)). The plugin starts one detached watcher per Herdr socket. It polls only the currently focused Space every three seconds, with serial Git reads and metadata writes. Focus hooks refresh immediately; startup and explicit refresh scan all Spaces. The watcher exits after three failed Herdr snapshots or when `clear` pauses it. Each poll costs one snapshot, up to five Git commands, and one metadata update. A large repository can delay a poll up to the configured command timeouts. Inactive Spaces update on startup, explicit refresh, and when focused; file changes in them can remain stale until then. An unexpected watcher crash can leave file changes stale until the next focus hook or manual refresh.
+
+Run tests with `node --test test/*.test.js`. Tests use temporary Git repos and a fake Herdr CLI.
 
 ## License
 
-MIT © 2026 Edwin (hasuwini77)
+MIT © 2026 Edwin (hasuwini77). Fork changes © 2026 Yerson Argote.

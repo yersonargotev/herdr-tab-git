@@ -1,0 +1,25 @@
+name: Test plugin
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run tests with an isolated home
+        shell: bash
+        run: |
+          export HOME="$(mktemp -d)"
+          export HERDR_CONFIG_DIR="$HOME/herdr"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          node --test test/*.test.js

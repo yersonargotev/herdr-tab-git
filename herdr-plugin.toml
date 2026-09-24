@@ -1,8 +1,8 @@
-id = "hasuwini77.tab-git"
-name = "Tab Git Status"
-version = "0.1.0"
-min_herdr_version = "0.8.0"
-description = "Git branch and status in the Spaces sidebar that follow the active tab instead of the first one"
+id = "yersonargotev.tab-git"
+name = "Tab Git Tokens"
+version = "1.0.0"
+min_herdr_version = "0.9.1"
+description = "Separate Git tokens for the active tab and pane in each Space"
 platforms = ["linux", "macos"]
 
 [[startup]]
@@ -18,6 +18,10 @@ command = ["sh", "run.sh"]
 
 [[events]]
 on = "pane.created"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "tab.focused"
 command = ["sh", "run.sh"]
 
 [[actions]]
