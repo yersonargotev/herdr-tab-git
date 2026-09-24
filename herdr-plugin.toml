@@ -26,15 +26,15 @@ command = ["sh", "run.sh"]
 
 [[events]]
 on = "tab.created"
-command = ["sh", "run.sh"]
+command = ["sh", "run.sh", "--all"]
 
 [[events]]
 on = "tab.renamed"
-command = ["sh", "run.sh"]
+command = ["sh", "run.sh", "--all"]
 
 [[events]]
 on = "tab.closed"
-command = ["sh", "run.sh"]
+command = ["sh", "run.sh", "--all"]
 
 [[events]]
 on = "tab.moved"

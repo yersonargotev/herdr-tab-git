@@ -110,6 +110,14 @@ fs.writeFileSync(p,JSON.stringify(s));
   const read = () => JSON.parse(fs.readFileSync(state)).tokens;
   const env = { ...process.env, HERDR_BIN_PATH: cli, HERDR_CONFIG_DIR: root, HERDR_PLUGIN_STATE_DIR: path.join(root, "plugin-state"), FAKE_STATE: state };
   const call = (...args) => spawnSync("sh", [path.join(__dirname, "..", "run.sh"), ...args], { env, encoding: "utf8" });
+  const eventArgs = (event) => {
+    const manifest = fs.readFileSync(path.join(__dirname, "..", "herdr-plugin.toml"), "utf8");
+    const match = manifest.match(new RegExp(`\\[\\[events\\]\\]\\s*on = "${event}"\\s*command = (\\[[^\\n]+\\])`));
+    assert.ok(match, `missing ${event} hook`);
+    const command = JSON.parse(match[1]);
+    assert.deepEqual(command.slice(0, 2), ["sh", "run.sh"]);
+    return command.slice(2);
+  };
   save();
   assert.equal(call("--all", "--clear").status, 0);
   assert.equal(call("--all").status, 0);
@@ -119,7 +127,10 @@ fs.writeFileSync(p,JSON.stringify(s));
   assert.equal(read().w2.tab_name, "nvim · project");
   snapshot.tabs[2].label = "renamed";
   save(read());
-  assert.equal(call("--all").status, 0);
+  for (const event of ["tab.created", "tab.renamed", "tab.closed", "tab.moved"]) {
+    assert.deepEqual(eventArgs(event), ["--all"]);
+  }
+  assert.equal(call(...eventArgs("tab.renamed")).status, 0);
   assert.equal(read().w2.tab_name, "renamed");
   snapshot.panes[3].foreground_cwd = first.dir;
   save(read());
