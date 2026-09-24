@@ -1,6 +1,6 @@
 # Herdr Tab Git Tokens
 
-An independently maintained Herdr plugin based on [hasuwini77/herdr-tab-git](https://github.com/hasuwini77/herdr-tab-git). It publishes compact Git tokens for each Space's active tab, using that tab's focused pane and live `foreground_cwd`. The original MIT license and Edwin's copyright remain in [LICENSE](LICENSE).
+An independently maintained Herdr plugin based on [hasuwini77/herdr-tab-git](https://github.com/hasuwini77/herdr-tab-git). It publishes the active tab name and compact Git tokens for each Space, using that tab's focused pane and live `foreground_cwd`. The original MIT license and Edwin's copyright remain in [LICENSE](LICENSE).
 
 Herdr's built-in `branch` and `git_status` use a Space's identity directory. These tokens follow the active tab, including the last active tab in an inactive Space. Herdr 0.9.1 or newer, Node.js and Git are required on macOS or Linux.
 
@@ -14,13 +14,14 @@ herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 
 The refresh action populates tokens immediately after linking or installing. Startup and focus hooks also refresh them. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
 
-Add a compact second row to `~/.config/herdr/config.toml`:
+Add three Space rows to `~/.config/herdr/config.toml`:
 
 ```toml
 [ui.sidebar.spaces]
 rows = [
-  ["state_icon", "workspace"],
-  [{ token = "$gitbranch", fg = "#89dceb" },
+  ["state_icon", { token = "$tab_name", fg = "#cdd6f4", bold = true }],
+  [{ token = "$gitbranch", fg = "#89dceb" }],
+  [
    { token = "$gitconflicted", fg = "#cba6f7" },
    { token = "$gitadded", fg = "#a6e3a1" },
    { token = "$gitmodified", fg = "#f9e2af" },
@@ -32,10 +33,11 @@ rows = [
 ]
 ```
 
-Each category is a separate token, so Herdr can style it independently. Omit less useful token names from the row if your sidebar is very narrow. The plugin still maintains the full token set.
+`$tab_name` contains the active tab label without a prefix, even outside a Git repository. Each Git category is a separate token, so Herdr can style it independently. Omit less useful token names from the row if your sidebar is very narrow. The plugin still maintains the full token set.
 
 | Token | Value | Meaning |
 | --- | --- | --- |
+| `$tab_name` | `codex · dots` | Active tab label |
 | `$gitbranch` | `main`, `detached@abc1234` | Branch or detached commit |
 | `$gitadded` | `+2` | Added paths |
 | `$gitmodified` | `~2` | Modified or renamed paths |

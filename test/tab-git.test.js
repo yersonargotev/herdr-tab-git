@@ -98,7 +98,9 @@ const id=a[2];s.tokens[id] ||= {};for(let i=5;i<a.length;i+=2){if(a[i]==='--toke
 fs.writeFileSync(p,JSON.stringify(s));
 `);
   fs.chmodSync(cli, 0o755);
-  const snapshot = { focused_workspace_id: "w1", workspaces: [{ workspace_id: "w1", active_tab_id: "t2" }, { workspace_id: "w2", active_tab_id: "t3" }], panes: [
+  const snapshot = { focused_workspace_id: "w1", workspaces: [{ workspace_id: "w1", active_tab_id: "t2" }, { workspace_id: "w2", active_tab_id: "t3" }], tabs: [
+    { tab_id: "t1", label: "first" }, { tab_id: "t2", label: "codex · dots" }, { tab_id: "t3", label: "nvim · project" },
+  ], panes: [
     { tab_id: "t1", focused: true, foreground_cwd: first.dir },
     { tab_id: "t2", focused: true, foreground_cwd: second.dir },
     { tab_id: "t3", focused: false, foreground_cwd: first.dir },
@@ -108,11 +110,28 @@ fs.writeFileSync(p,JSON.stringify(s));
   const read = () => JSON.parse(fs.readFileSync(state)).tokens;
   const env = { ...process.env, HERDR_BIN_PATH: cli, HERDR_CONFIG_DIR: root, HERDR_PLUGIN_STATE_DIR: path.join(root, "plugin-state"), FAKE_STATE: state };
   const call = (...args) => spawnSync("sh", [path.join(__dirname, "..", "run.sh"), ...args], { env, encoding: "utf8" });
+  const eventArgs = (event) => {
+    const manifest = fs.readFileSync(path.join(__dirname, "..", "herdr-plugin.toml"), "utf8");
+    const match = manifest.match(new RegExp(`\\[\\[events\\]\\]\\s*on = "${event}"\\s*command = (\\[[^\\n]+\\])`));
+    assert.ok(match, `missing ${event} hook`);
+    const command = JSON.parse(match[1]);
+    assert.deepEqual(command.slice(0, 2), ["sh", "run.sh"]);
+    return command.slice(2);
+  };
   save();
   assert.equal(call("--all", "--clear").status, 0);
   assert.equal(call("--all").status, 0);
   assert.equal(read().w1.gituntracked, "?1");
   assert.equal(read().w2.gituntracked, "?1");
+  assert.equal(read().w1.tab_name, "codex · dots");
+  assert.equal(read().w2.tab_name, "nvim · project");
+  snapshot.tabs[2].label = "renamed";
+  save(read());
+  for (const event of ["tab.created", "tab.renamed", "tab.closed", "tab.moved"]) {
+    assert.deepEqual(eventArgs(event), ["--all"]);
+  }
+  assert.equal(call(...eventArgs("tab.renamed")).status, 0);
+  assert.equal(read().w2.tab_name, "renamed");
   snapshot.panes[3].foreground_cwd = first.dir;
   save(read());
   assert.equal(call("--all").status, 0);
@@ -121,7 +140,7 @@ fs.writeFileSync(p,JSON.stringify(s));
   snapshot.panes[3].foreground_cwd = root;
   save(read());
   assert.equal(call("--all").status, 0);
-  assert.deepEqual(read().w2, {});
+  assert.deepEqual(read().w2, { tab_name: "renamed" });
   assert.equal(read().w1.gituntracked, "?1");
   snapshot.panes[3].foreground_cwd = first.dir;
   save(read());

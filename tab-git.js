@@ -7,7 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ID = "yersonargotev.tab-git";
-const NAMES = ["gitbranch", "gitadded", "gitmodified", "gitdeleted", "gituntracked", "gitconflicted", "gitahead", "gitbehind", "gitclean"];
+const NAMES = ["tab_name", "gitbranch", "gitadded", "gitmodified", "gitdeleted", "gituntracked", "gitconflicted", "gitahead", "gitbehind", "gitclean"];
 const base = process.env.HERDR_CONFIG_DIR || path.join(os.homedir(), ".config", "herdr");
 const configDir = process.env.HERDR_PLUGIN_CONFIG_DIR || path.join(base, "plugins", "config", ID);
 const pluginStateDir = process.env.HERDR_PLUGIN_STATE_DIR || path.join(base, "plugins", "state", ID);
@@ -135,13 +135,16 @@ function refresh(wide = false, clear = false, fromWatcher = false) {
     for (const ws of targets) {
       let values = {};
       if (!clear) {
+        const tab = (snap.tabs || []).find((tab) => tab.tab_id === ws.active_tab_id);
+        const label = tab?.label?.trim();
+        if (label) values.tab_name = label;
         const panes = (snap.panes || []).filter((p) => p.tab_id === ws.active_tab_id);
         const pane = panes.find((p) => p.focused) || panes[0];
         const cwd = pane?.foreground_cwd || pane?.cwd;
         if (cwd) {
           const info = gitInfo(cwd, timeout);
           if (info.kind === "failure") console.error(`Git failed for ${ws.workspace_id}: ${info.error}`);
-          if (info.kind === "ok") values = tokens(info);
+          if (info.kind === "ok") Object.assign(values, tokens(info));
         }
       }
       report(ws.workspace_id, values, timeout);
