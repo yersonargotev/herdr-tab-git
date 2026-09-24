@@ -1,8 +1,8 @@
 id = "yersonargotev.tab-git"
 name = "Tab Git Tokens"
-version = "1.0.0"
+version = "1.1.0"
 min_herdr_version = "0.9.1"
-description = "Separate Git tokens for the active tab and pane in each Space"
+description = "Active tab name and separate Git tokens for each Space"
 platforms = ["linux", "macos"]
 
 [[startup]]
@@ -23,6 +23,22 @@ command = ["sh", "run.sh"]
 [[events]]
 on = "tab.focused"
 command = ["sh", "run.sh"]
+
+[[events]]
+on = "tab.created"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "tab.renamed"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "tab.closed"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "tab.moved"
+command = ["sh", "run.sh", "--all"]
 
 [[actions]]
 id = "refresh"

@@ -98,7 +98,9 @@ const id=a[2];s.tokens[id] ||= {};for(let i=5;i<a.length;i+=2){if(a[i]==='--toke
 fs.writeFileSync(p,JSON.stringify(s));
 `);
   fs.chmodSync(cli, 0o755);
-  const snapshot = { focused_workspace_id: "w1", workspaces: [{ workspace_id: "w1", active_tab_id: "t2" }, { workspace_id: "w2", active_tab_id: "t3" }], panes: [
+  const snapshot = { focused_workspace_id: "w1", workspaces: [{ workspace_id: "w1", active_tab_id: "t2" }, { workspace_id: "w2", active_tab_id: "t3" }], tabs: [
+    { tab_id: "t1", label: "first" }, { tab_id: "t2", label: "codex · dots" }, { tab_id: "t3", label: "nvim · project" },
+  ], panes: [
     { tab_id: "t1", focused: true, foreground_cwd: first.dir },
     { tab_id: "t2", focused: true, foreground_cwd: second.dir },
     { tab_id: "t3", focused: false, foreground_cwd: first.dir },
@@ -113,6 +115,12 @@ fs.writeFileSync(p,JSON.stringify(s));
   assert.equal(call("--all").status, 0);
   assert.equal(read().w1.gituntracked, "?1");
   assert.equal(read().w2.gituntracked, "?1");
+  assert.equal(read().w1.tab_name, "codex · dots");
+  assert.equal(read().w2.tab_name, "nvim · project");
+  snapshot.tabs[2].label = "renamed";
+  save(read());
+  assert.equal(call("--all").status, 0);
+  assert.equal(read().w2.tab_name, "renamed");
   snapshot.panes[3].foreground_cwd = first.dir;
   save(read());
   assert.equal(call("--all").status, 0);
@@ -121,7 +129,7 @@ fs.writeFileSync(p,JSON.stringify(s));
   snapshot.panes[3].foreground_cwd = root;
   save(read());
   assert.equal(call("--all").status, 0);
-  assert.deepEqual(read().w2, {});
+  assert.deepEqual(read().w2, { tab_name: "renamed" });
   assert.equal(read().w1.gituntracked, "?1");
   snapshot.panes[3].foreground_cwd = first.dir;
   save(read());
