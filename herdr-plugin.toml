@@ -1,6 +1,6 @@
 id = "yersonargotev.tab-git"
 name = "Tab Git Tokens"
-version = "1.1.0"
+version = "1.2.0"
 min_herdr_version = "0.9.1"
 description = "Active tab name and separate Git tokens for each Space"
 platforms = ["linux", "macos"]

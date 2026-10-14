@@ -138,7 +138,9 @@ fs.writeFileSync(p,JSON.stringify(s));
   assert.equal(read().w2.gitclean, "clean");
   assert.equal(read().w2.gituntracked, undefined);
   snapshot.panes[3].foreground_cwd = root;
-  save(read());
+  const stale = read();
+  Object.assign(stale.w2, {gitstaged: "+9", gitworkmodified: "!9", gitforward: "⇡9", gitbackward: "⇣9", gitdiverged: "⇕⇡9⇣9"});
+  save(stale);
   assert.equal(call("--all").status, 0);
   assert.deepEqual(read().w2, { tab_name: "renamed" });
   assert.equal(read().w1.gituntracked, "?1");
@@ -192,4 +194,68 @@ test("failed and timed out status cannot become clean", (t) => {
   assert.equal(plugin.gitInfo(f.dir, 1500).kind, "failure");
   fs.writeFileSync(wrapper, `#!/bin/sh\nif [ "$1" = status ]; then sleep 2; fi\nexec "${real}" "$@"\n`);
   assert.equal(plugin.gitInfo(f.dir, 100).kind, "failure");
+});
+
+
+test("prompt tokens match staged/worktree vocabulary and exclusive upstream states", (t) => {
+  const f = fixture(t);
+  const branch = f.git("branch", "--show-current");
+  f.put("base", "staged\n"); f.git("add", "base"); f.put("base", "unstaged\n");
+  f.put("new", "untracked");
+  let values = plugin.tokens(plugin.gitInfo(f.dir, 1500));
+  assert.equal(values.gitbranch, branch);
+  assert.equal(values.gitstaged, "+1");
+  assert.equal(values.gitworkmodified, "!1");
+  assert.equal(values.gituntracked, "?1");
+  for (const [ahead, behind, expected] of [[2, 0, {gitforward: "⇡2"}], [0, 3, {gitbackward: "⇣3"}], [2, 3, {gitdiverged: "⇕⇡2⇣3"}], [0, 0, {}]]) {
+    values = plugin.tokens({...plugin.gitInfo(f.dir, 1500), ahead, behind});
+    assert.deepEqual(Object.fromEntries(Object.entries(values).filter(([key]) => ["gitforward", "gitbackward", "gitdiverged"].includes(key))), expected);
+  }
+});
+
+
+test("prompt counts distinguish index, worktree, rename, deletion and conflict", () => {
+  const status = Buffer.from("M  staged\0 M unstaged\0MM both\0AM added-and-edited\0D  deleted\0R  renamed\0old-name\0UU conflict\0?? untracked\0 A intent-to-add\0T  typechange\0");
+  const info = plugin.parseStatus(status);
+  assert.equal(info.staged, 4);
+  assert.equal(info.workmodified, 4);
+  assert.equal(info.conflicted, 1);
+  assert.equal(info.untracked, 1);
+});
+
+// Run with STARSHIP_CONFIG pointing to the dots-managed prompt for differential QA.
+test("prompt tokens match rendered Starship on real Git states", {skip: !process.env.STARSHIP_CONFIG}, (t) => {
+  const f = fixture(t);
+  const verify = () => {
+    const info = plugin.gitInfo(f.dir, 1500);
+    const values = plugin.tokens(info);
+    const actual = ["gitstaged", "gitworkmodified", "gituntracked", "gitforward", "gitbackward", "gitdiverged"].map(key => values[key]).filter(Boolean).join(" ");
+    const rendered = execFileSync("starship", ["module", "git_status", "--path", f.dir], {encoding: "utf8"}).replace(/\x1b\[[0-9;]*m/g, "").trim();
+    assert.equal(actual, rendered, JSON.stringify(info));
+    const branch = execFileSync("starship", ["module", "git_branch", "--path", f.dir], {encoding: "utf8"}).replace(/\x1b\[[0-9;]*m/g, "").trim();
+    assert.equal(values.gitbranch, branch.replace(/^ /, ""));
+  };
+  verify();
+  f.put("base", "modified\n"); verify();
+  f.git("add", "base"); verify();
+  f.put("base", "both\n"); verify();
+  f.put("new", "added\n"); verify();
+  f.git("add", "new"); verify();
+  f.put("new", "edited\n"); verify();
+  f.git("commit", "-qam", "changes"); verify();
+  f.git("mv", "base", "renamed"); verify();
+  f.git("commit", "-qm", "rename");
+  fs.rmSync(path.join(f.dir, "renamed")); verify();
+  f.git("add", "renamed"); verify();
+  f.git("commit", "-qm", "deletion");
+  f.git("branch", "upstream");
+  const branch = f.git("branch", "--show-current");
+  f.git("branch", "--set-upstream-to=upstream", branch);
+  f.put("new", "local\n"); f.git("commit", "-qam", "local"); verify();
+  f.git("checkout", "-q", "upstream");
+  f.put("new", "remote\n"); f.git("commit", "-qam", "remote");
+  f.git("checkout", "-q", branch); verify();
+  assert.notEqual(spawnSync("git", ["merge", "upstream"], {cwd: f.dir}).status, 0); verify();
+  f.git("merge", "--abort");
+  f.git("reset", "--hard", "upstream~1"); verify();
 });

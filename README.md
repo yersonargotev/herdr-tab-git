@@ -14,24 +14,26 @@ herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 
 The refresh action populates tokens immediately after linking or installing. Startup and focus hooks also refresh them. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
 
-Add three Space rows to `~/.config/herdr/config.toml`:
+Use the same Git vocabulary as the dots-managed Starship prompt:
 
 ```toml
 [ui.sidebar.spaces]
 rows = [
   ["state_icon", { token = "$tab_name", fg = "#cdd6f4", bold = true }],
-  [{ token = "$gitbranch", fg = "#89dceb" }],
-  [
-   { token = "$gitconflicted", fg = "#cba6f7" },
-   { token = "$gitadded", fg = "#a6e3a1" },
-   { token = "$gitmodified", fg = "#f9e2af" },
-   { token = "$gitdeleted", fg = "#f38ba8" },
-   { token = "$gituntracked", fg = "#89b4fa" },
-   { token = "$gitahead", fg = "#94e2d5" },
-   { token = "$gitbehind", fg = "#fab387" },
+  [{ token = "$gitbranch", fg = "#cba6f7", bold = true },
+   { token = "$gitstaged", fg = "#a6e3a1" },
+   { token = "$gitworkmodified", fg = "#f9e2af" },
+   { token = "$gituntracked", fg = "#f38ba8" },
+   { token = "$gitforward", fg = "#94e2d5" },
+   { token = "$gitbackward", fg = "#fab387" },
+   { token = "$gitdiverged", fg = "#cba6f7" },
    { token = "$gitclean", fg = "#6c7086" }],
 ]
 ```
+
+Version 1.2 adds prompt-oriented status tokens. Branch names remain unprefixed. The original
+path-category tokens and counts remain available. Colors belong to the consumer;
+the example matches Catppuccin Mocha. A clean repository shows its branch and the original `clean` indicator.
 
 `$tab_name` contains the active tab label without a prefix, even outside a Git repository. Each Git category is a separate token, so Herdr can style it independently. Omit less useful token names from the row if your sidebar is very narrow. The plugin still maintains the full token set.
 
@@ -39,6 +41,11 @@ rows = [
 | --- | --- | --- |
 | `$tab_name` | `codex · dots` | Active tab label |
 | `$gitbranch` | `main`, `detached@abc1234` | Branch or detached commit |
+| `$gitstaged` | `+2` | Index additions, modifications, and type changes |
+| `$gitworkmodified` | `!2` | Worktree modifications or intent-to-add paths |
+| `$gitforward` | `⇡2` | Ahead only |
+| `$gitbackward` | `⇣2` | Behind only |
+| `$gitdiverged` | `⇕⇡2⇣3` | Both ahead and behind; excludes the two prompt arrows |
 | `$gitadded` | `+2` | Added paths |
 | `$gitmodified` | `~2` | Modified or renamed paths |
 | `$gitdeleted` | `−2` | Deleted paths |
@@ -71,7 +78,9 @@ herdr plugin action invoke clear --plugin yersonargotev.tab-git
 
 Herdr plugin hooks have no file change event, and startup hooks are one-shot ([Herdr plugin documentation](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx)). The plugin starts one detached watcher per Herdr socket. It polls only the currently focused Space every three seconds, with serial Git reads and metadata writes. Focus hooks refresh immediately; startup and explicit refresh scan all Spaces. The watcher exits after three failed Herdr snapshots or when `clear` pauses it. Each poll costs one snapshot, up to five Git commands, and one metadata update. A large repository can delay a poll up to the configured command timeouts. Inactive Spaces update on startup, explicit refresh, and when focused; file changes in them can remain stale until then. An unexpected watcher crash can leave file changes stale until the next focus hook or manual refresh.
 
-Run tests with `node --test test/*.test.js`. Tests use temporary Git repos and a fake Herdr CLI.
+Run tests with `node --test test/*.test.js`. Set `STARSHIP_CONFIG` to the absolute
+path of the dots-managed Starship config to also compare rendered modules in
+temporary repositories (requires Starship on PATH). Tests use temporary Git repos and a fake Herdr CLI.
 
 ## License
 
