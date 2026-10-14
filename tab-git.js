@@ -85,7 +85,7 @@ function gitInfo(cwd, timeoutMs) {
 }
 
 function tokens(info) {
-  const result = { gitbranch: ` ${info.branch}` };
+  const result = { gitbranch: info.branch };
   for (const [kind, symbol] of Object.entries({ added: "+", modified: "~", deleted: "−", untracked: "?", conflicted: "!", ahead: "↑", behind: "↓" })) {
     if (info[kind]) result[`git${kind}`] = `${symbol}${info[kind]}`;
   }

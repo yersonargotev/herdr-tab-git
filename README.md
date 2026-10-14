@@ -26,20 +26,21 @@ rows = [
    { token = "$gituntracked", fg = "#f38ba8" },
    { token = "$gitforward", fg = "#94e2d5" },
    { token = "$gitbackward", fg = "#fab387" },
-   { token = "$gitdiverged", fg = "#cba6f7" }],
+   { token = "$gitdiverged", fg = "#cba6f7" },
+   { token = "$gitclean", fg = "#6c7086" }],
 ]
 ```
 
-Version 1.2 adds the ` ` branch prefix and prompt-oriented tokens. The original
+Version 1.2 adds prompt-oriented status tokens. Branch names remain unprefixed. The original
 path-category tokens and counts remain available. Colors belong to the consumer;
-the example matches Catppuccin Mocha. A clean repository shows just its branch.
+the example matches Catppuccin Mocha. A clean repository shows its branch and the original `clean` indicator.
 
 `$tab_name` contains the active tab label without a prefix, even outside a Git repository. Each Git category is a separate token, so Herdr can style it independently. Omit less useful token names from the row if your sidebar is very narrow. The plugin still maintains the full token set.
 
 | Token | Value | Meaning |
 | --- | --- | --- |
 | `$tab_name` | `codex · dots` | Active tab label |
-| `$gitbranch` | ` main`, ` detached@abc1234` | Branch or detached commit |
+| `$gitbranch` | `main`, `detached@abc1234` | Branch or detached commit |
 | `$gitstaged` | `+2` | Index additions, modifications, and type changes |
 | `$gitworkmodified` | `!2` | Worktree modifications or intent-to-add paths |
 | `$gitforward` | `⇡2` | Ahead only |

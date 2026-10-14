@@ -203,7 +203,7 @@ test("prompt tokens match staged/worktree vocabulary and exclusive upstream stat
   f.put("base", "staged\n"); f.git("add", "base"); f.put("base", "unstaged\n");
   f.put("new", "untracked");
   let values = plugin.tokens(plugin.gitInfo(f.dir, 1500));
-  assert.equal(values.gitbranch, ` ${branch}`);
+  assert.equal(values.gitbranch, branch);
   assert.equal(values.gitstaged, "+1");
   assert.equal(values.gitworkmodified, "!1");
   assert.equal(values.gituntracked, "?1");
@@ -233,7 +233,7 @@ test("prompt tokens match rendered Starship on real Git states", {skip: !process
     const rendered = execFileSync("starship", ["module", "git_status", "--path", f.dir], {encoding: "utf8"}).replace(/\x1b\[[0-9;]*m/g, "").trim();
     assert.equal(actual, rendered, JSON.stringify(info));
     const branch = execFileSync("starship", ["module", "git_branch", "--path", f.dir], {encoding: "utf8"}).replace(/\x1b\[[0-9;]*m/g, "").trim();
-    assert.equal(values.gitbranch, branch);
+    assert.equal(values.gitbranch, branch.replace(/^ /, ""));
   };
   verify();
   f.put("base", "modified\n"); verify();
