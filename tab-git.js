@@ -7,7 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ID = "yersonargotev.tab-git";
-const NAMES = ["tab_name", "gitbranch", "gitadded", "gitmodified", "gitdeleted", "gituntracked", "gitconflicted", "gitahead", "gitbehind", "gitclean"];
+const NAMES = ["tab_name", "gitbranch", "gitadded", "gitmodified", "gitdeleted", "gituntracked", "gitconflicted", "gitahead", "gitbehind", "gitclean", "gitstaged", "gitworkmodified", "gitforward", "gitbackward", "gitdiverged"];
 const base = process.env.HERDR_CONFIG_DIR || path.join(os.homedir(), ".config", "herdr");
 const configDir = process.env.HERDR_PLUGIN_CONFIG_DIR || path.join(base, "plugins", "config", ID);
 const pluginStateDir = process.env.HERDR_PLUGIN_STATE_DIR || path.join(base, "plugins", "state", ID);
@@ -33,12 +33,18 @@ function run(bin, args, cwd, timeoutMs, encoding = "utf8") {
 }
 
 function parseStatus(buffer) {
-  const counts = { added: 0, modified: 0, deleted: 0, untracked: 0, conflicted: 0 };
+  const counts = { added: 0, modified: 0, deleted: 0, untracked: 0, conflicted: 0, staged: 0, workmodified: 0 };
   const records = buffer.toString("utf8").split("\0");
   for (let i = 0; i < records.length && records[i]; i++) {
     const xy = records[i].slice(0, 2);
     if (records[i][2] !== " ") throw new Error("invalid porcelain status");
     if (/[RC]/.test(xy)) i++; // -z adds the original path after a rename/copy.
+    const conflicted = /U/.test(xy) || xy === "AA" || xy === "DD";
+    // Match Starship's staged and modified modules, independently of path categories.
+    if (!conflicted && xy !== "??") {
+      if (/[AMT]/.test(xy[0])) counts.staged++;
+      if (/[AM]/.test(xy[1])) counts.workmodified++;
+    }
     if (xy === "??") counts.untracked++;
     else if (/U/.test(xy) || xy === "AA" || xy === "DD") counts.conflicted++;
     else if (xy.includes("D")) counts.deleted++;
@@ -79,10 +85,15 @@ function gitInfo(cwd, timeoutMs) {
 }
 
 function tokens(info) {
-  const result = { gitbranch: info.branch };
+  const result = { gitbranch: ` ${info.branch}` };
   for (const [kind, symbol] of Object.entries({ added: "+", modified: "~", deleted: "−", untracked: "?", conflicted: "!", ahead: "↑", behind: "↓" })) {
     if (info[kind]) result[`git${kind}`] = `${symbol}${info[kind]}`;
   }
+  if (info.staged) result.gitstaged = `+${info.staged}`;
+  if (info.workmodified) result.gitworkmodified = `!${info.workmodified}`;
+  if (info.ahead && info.behind) result.gitdiverged = `⇕⇡${info.ahead}⇣${info.behind}`;
+  else if (info.ahead) result.gitforward = `⇡${info.ahead}`;
+  else if (info.behind) result.gitbackward = `⇣${info.behind}`;
   if (Object.keys(result).length === 1) result.gitclean = "clean";
   return result;
 }
