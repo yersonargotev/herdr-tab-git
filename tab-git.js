@@ -7,7 +7,10 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ID = "yersonargotev.tab-git";
-const NAMES = ["tab_name", "gitbranch", "gitadded", "gitmodified", "gitdeleted", "gituntracked", "gitconflicted", "gitahead", "gitbehind", "gitclean", "gitstaged", "gitworkmodified", "gitforward", "gitbackward", "gitdiverged"];
+const TOKEN_NAMES = {
+  workspace: ["tab_name", "gitbranch", "gitadded", "gitmodified", "gitdeleted", "gituntracked", "gitconflicted", "gitahead", "gitbehind", "gitclean", "gitstaged", "gitworkmodified", "gitforward", "gitbackward", "gitdiverged"],
+  pane: ["project"],
+};
 const base = process.env.HERDR_CONFIG_DIR || path.join(os.homedir(), ".config", "herdr");
 const configDir = process.env.HERDR_PLUGIN_CONFIG_DIR || path.join(base, "plugins", "config", ID);
 const pluginStateDir = process.env.HERDR_PLUGIN_STATE_DIR || path.join(base, "plugins", "state", ID);
@@ -84,6 +87,12 @@ function gitInfo(cwd, timeoutMs) {
   return { kind: "ok", branch, ...counts, ahead, behind };
 }
 
+function projectName(cwd, timeoutMs) {
+  if (!cwd) return undefined;
+  const root = run("git", ["rev-parse", "--show-toplevel"], cwd, timeoutMs);
+  return path.basename(root.ok ? root.value.replace(/\n$/, "") : cwd);
+}
+
 function tokens(info) {
   const result = { gitbranch: info.branch };
   for (const [kind, symbol] of Object.entries({ added: "+", modified: "~", deleted: "−", untracked: "?", conflicted: "!", ahead: "↑", behind: "↓" })) {
@@ -104,9 +113,9 @@ function snapshot(timeoutMs) {
   try { return JSON.parse(r.value).result.snapshot; } catch { return null; }
 }
 
-function report(id, values, timeoutMs) {
-  const args = ["workspace", "report-metadata", id, "--source", ID];
-  for (const name of NAMES) args.push(values[name] === undefined ? "--clear-token" : "--token", values[name] === undefined ? name : `${name}=${values[name]}`);
+function report(scope, id, values, timeoutMs) {
+  const args = [scope, "report-metadata", id, "--source", ID];
+  for (const name of TOKEN_NAMES[scope]) args.push(values[name] === undefined ? "--clear-token" : "--token", values[name] === undefined ? name : `${name}=${values[name]}`);
   const r = run(herdrBin, args, process.cwd(), timeoutMs);
   if (!r.ok) throw new Error(`metadata update failed: ${r.error}`);
 }
@@ -158,7 +167,15 @@ function refresh(wide = false, clear = false, fromWatcher = false) {
           if (info.kind === "ok") Object.assign(values, tokens(info));
         }
       }
-      report(ws.workspace_id, values, timeout);
+      report("workspace", ws.workspace_id, values, timeout);
+    }
+    if (wide || clear) {
+      const projects = new Map();
+      for (const pane of snap.panes || []) {
+        const cwd = pane.foreground_cwd || pane.cwd;
+        if (!clear && !projects.has(cwd)) projects.set(cwd, projectName(cwd, timeout));
+        report("pane", pane.pane_id, clear ? {} : { project: projects.get(cwd) }, timeout);
+      }
     }
     return true;
   });

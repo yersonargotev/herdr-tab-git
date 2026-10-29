@@ -94,17 +94,17 @@ test("metadata follows active tab, inactive Space pane and cwd; clears stale val
   fs.writeFileSync(cli, `#!/usr/bin/env node
 const fs=require('fs');const p=process.env.FAKE_STATE;const s=JSON.parse(fs.readFileSync(p));const a=process.argv.slice(2);
 if(a[0]==='api'){console.log(JSON.stringify({result:{snapshot:s.snapshot}}));process.exit(0)}
-const id=a[2];s.tokens[id] ||= {};for(let i=5;i<a.length;i+=2){if(a[i]==='--token'){const at=a[i+1].indexOf('=');s.tokens[id][a[i+1].slice(0,at)]=a[i+1].slice(at+1)}else if(a[i]==='--clear-token')delete s.tokens[id][a[i+1]]}
+const id=a[2];const store=a[0]==='pane'?(s.paneTokens ||= {}):s.tokens;store[id] ||= {};for(let i=5;i<a.length;i+=2){if(a[i]==='--token'){const at=a[i+1].indexOf('=');store[id][a[i+1].slice(0,at)]=a[i+1].slice(at+1)}else if(a[i]==='--clear-token')delete store[id][a[i+1]]}
 fs.writeFileSync(p,JSON.stringify(s));
 `);
   fs.chmodSync(cli, 0o755);
   const snapshot = { focused_workspace_id: "w1", workspaces: [{ workspace_id: "w1", active_tab_id: "t2" }, { workspace_id: "w2", active_tab_id: "t3" }], tabs: [
     { tab_id: "t1", label: "first" }, { tab_id: "t2", label: "codex · dots" }, { tab_id: "t3", label: "nvim · project" },
   ], panes: [
-    { tab_id: "t1", focused: true, foreground_cwd: first.dir },
-    { tab_id: "t2", focused: true, foreground_cwd: second.dir },
-    { tab_id: "t3", focused: false, foreground_cwd: first.dir },
-    { tab_id: "t3", focused: true, foreground_cwd: second.dir },
+    { pane_id: "w1:p1", tab_id: "t1", focused: true, foreground_cwd: first.dir },
+    { pane_id: "w1:p2", tab_id: "t2", focused: true, foreground_cwd: second.dir },
+    { pane_id: "w2:p1", tab_id: "t3", focused: false, foreground_cwd: first.dir },
+    { pane_id: "w2:p2", tab_id: "t3", focused: true, foreground_cwd: second.dir },
   ] };
   const save = (tokens = {}) => fs.writeFileSync(state, JSON.stringify({ snapshot, tokens }));
   const read = () => JSON.parse(fs.readFileSync(state)).tokens;
@@ -161,7 +161,7 @@ test("simultaneous refreshes serialize metadata writes", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fake-herdr-overlap-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const state = path.join(root, "state.json"), log = path.join(root, "writes.log"), cli = path.join(root, "herdr");
-  fs.writeFileSync(state, JSON.stringify({ result: { snapshot: { focused_workspace_id: "w", workspaces: [{ workspace_id: "w", active_tab_id: "t" }], panes: [{ tab_id: "t", focused: true, foreground_cwd: f.dir }] } } }));
+  fs.writeFileSync(state, JSON.stringify({ result: { snapshot: { focused_workspace_id: "w", workspaces: [{ workspace_id: "w", active_tab_id: "t" }], panes: [{ pane_id: "w:p", tab_id: "t", focused: true, foreground_cwd: f.dir }] } } }));
   fs.writeFileSync(cli, `#!/usr/bin/env node
 const fs=require('fs');const a=process.argv.slice(2);
 if(a[0]==='api'){fs.appendFileSync(process.env.FAKE_LOG,'B');process.stdout.write(fs.readFileSync(process.env.FAKE_STATE));process.exit(0)}
@@ -177,7 +177,7 @@ fs.appendFileSync(process.env.FAKE_LOG,'E');
   });
   const results = await Promise.all([invoke(), invoke()]);
   assert.deepEqual(results, [0, 0]);
-  assert.equal(fs.readFileSync(log, "utf8"), "BSEBSE");
+  assert.equal(fs.readFileSync(log, "utf8"), "BSESEBSESE");
   spawnSync(process.execPath, [path.join(__dirname, "..", "tab-git.js"), "--clear"], { env });
 });
 

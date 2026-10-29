@@ -1,8 +1,8 @@
 # Herdr Tab Git Tokens
 
-An independently maintained Herdr plugin based on [hasuwini77/herdr-tab-git](https://github.com/hasuwini77/herdr-tab-git). It publishes the active tab name and compact Git tokens for each Space, using that tab's focused pane and live `foreground_cwd`. The original MIT license and Edwin's copyright remain in [LICENSE](LICENSE).
+An independently maintained Herdr plugin based on [hasuwini77/herdr-tab-git](https://github.com/hasuwini77/herdr-tab-git). It publishes the active tab name and compact Git tokens for each Space, using that tab's focused pane and live `foreground_cwd`. It also publishes each pane's project for the Agents sidebar. The original MIT license and Edwin's copyright remain in [LICENSE](LICENSE).
 
-Herdr's built-in `branch` and `git_status` use a Space's identity directory. These tokens follow the active tab, including the last active tab in an inactive Space. Herdr 0.9.1 or newer, Node.js and Git are required on macOS or Linux.
+Herdr's built-in `branch` and `git_status` use a Space's identity directory. These tokens follow the active tab, including the last active tab in an inactive Space. Herdr 0.9.5 or newer, Node.js and Git are required on macOS or Linux.
 
 ## Install
 
@@ -12,7 +12,7 @@ herdr plugin install yersonargotev/herdr-tab-git
 herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 ```
 
-The refresh action populates tokens immediately after linking or installing. Startup and focus hooks also refresh them. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
+The refresh action populates tokens immediately after linking or installing. Startup refreshes both Space and pane tokens. Focus hooks refresh Space tokens. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
 
 Use the same Git vocabulary as the dots-managed Starship prompt:
 
@@ -36,6 +36,28 @@ path-category tokens and counts remain available. Colors belong to the consumer;
 the example matches Catppuccin Mocha. A clean repository shows its branch and the original `clean` indicator.
 
 `$tab_name` contains the active tab label without a prefix, even outside a Git repository. Each Git category is a separate token, so Herdr can style it independently. Omit less useful token names from the row if your sidebar is very narrow. The plugin still maintains the full token set.
+
+## Show each agent's project
+
+Add these rows to `~/.config/herdr/config.toml`. The plugin does not edit your configuration.
+
+```toml
+[ui.sidebar.agents]
+rows = [
+	["state_icon", "agent"],
+	[{ token = "$project", fg = "#6c7086" }],
+]
+```
+
+Run the refresh action after you add the rows. On Herdr 0.9.5, each Agents row consumes its own pane's `$project` token. A Workspace named `dots` can show agents in `dots` and `herdr-tab-git`, including two panes in the same tab.
+
+The project uses `foreground_cwd` when available, then `cwd`. In Git, the label is the checkout root basename, even from a subdirectory. A linked worktree uses its own root name. Outside Git, or when root discovery fails or times out, the label is the selected directory basename. If neither directory exists in the snapshot, the plugin clears the token and the project row disappears. Spaces in names remain intact. Different roots with the same basename intentionally show the same label.
+
+Root discovery runs independently of Git status and upstream inspection. A successful root lookup still supplies the project when those other commands fail. Space Git tokens retain their failure-clearing behavior.
+
+Startup and full refresh update every snapshot pane, including inactive tabs and Workspaces. The focused Space watcher does not update `$project` in this version. Project labels can remain stale after a directory change until the next full refresh. Project metadata has no automatic expiry in this version.
+
+## Space tokens
 
 | Token | Value | Meaning |
 | --- | --- | --- |
@@ -72,11 +94,11 @@ herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 herdr plugin action invoke clear --plugin yersonargotev.tab-git
 ```
 
-`refresh` scans every Space and resumes automatic updates. `clear` removes every token and pauses automatic updates until `refresh`.
+`refresh` scans every Space and pane, then resumes automatic Space updates. `clear` removes this plugin's Space tokens and pane project tokens. It pauses automatic updates until `refresh`. Other metadata remains intact.
 
 ## Refresh cost and limits
 
-Herdr plugin hooks have no file change event, and startup hooks are one-shot ([Herdr plugin documentation](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx)). The plugin starts one detached watcher per Herdr socket. It polls only the currently focused Space every three seconds, with serial Git reads and metadata writes. Focus hooks refresh immediately; startup and explicit refresh scan all Spaces. The watcher exits after three failed Herdr snapshots or when `clear` pauses it. Each poll costs one snapshot, up to five Git commands, and one metadata update. A large repository can delay a poll up to the configured command timeouts. Inactive Spaces update on startup, explicit refresh, and when focused; file changes in them can remain stale until then. An unexpected watcher crash can leave file changes stale until the next focus hook or manual refresh.
+Herdr plugin hooks have no file change event, and startup hooks are one-shot ([Herdr plugin documentation](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx)). The plugin starts one detached watcher per Herdr socket. It polls only the currently focused Space every three seconds, with serial Git reads and metadata writes. Focus hooks refresh immediately; startup and explicit refresh scan all Spaces. The watcher exits after three failed Herdr snapshots or when `clear` pauses it. Each poll costs one snapshot, the selected pane's Git commands, and one metadata update. A full refresh also runs one root lookup per distinct pane directory and one metadata update per pane. A large repository can delay a poll up to the configured command timeouts. Inactive Spaces update on startup, explicit refresh, and when focused; file changes in them can remain stale until then. An unexpected watcher crash can leave file changes stale until the next focus hook or manual refresh.
 
 Run tests with `node --test test/*.test.js`. Set `STARSHIP_CONFIG` to the absolute
 path of the dots-managed Starship config to also compare rendered modules in
