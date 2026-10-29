@@ -104,6 +104,8 @@ Each poll reads one snapshot, runs the focused Space's Git commands, and updates
 
 The same per-session lock serializes snapshot reads, metadata writes, and pause transitions. Overlapping refreshes read a fresh snapshot after they obtain the lock. `clear` pauses automatic publication until explicit `refresh`, including wide automatic events. The watcher exits after three failed Herdr snapshots or a pause. A failed write for one target does not end a reachable watcher. A watcher crash stops renewal, so project labels expire. A later hook or explicit refresh starts the watcher again.
 
+After a plugin update, the next hook or explicit refresh replaces the previous installation's watcher, including legacy watchers that did not publish pane projects. The watcher records its installation path and code digest; unchanged installations reuse the same process. Replacement verifies the process command and plugin manifest before stopping it, then waits for its cleanup before starting the new watcher.
+
 Run tests with `node --test test/*.test.js`. Set `STARSHIP_CONFIG` to the absolute
 path of the dots-managed Starship config to also compare rendered modules in
 temporary repositories (requires Starship on PATH). Tests use temporary Git repos and a fake Herdr CLI.
