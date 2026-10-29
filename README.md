@@ -12,7 +12,7 @@ herdr plugin install yersonargotev/herdr-tab-git
 herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 ```
 
-The refresh action populates tokens immediately after linking or installing. Startup refreshes both Space and pane tokens. Focus hooks refresh Space tokens. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
+The refresh action populates tokens immediately after linking or installing. Startup refreshes both Space and pane tokens. Focus and pane lifecycle hooks refresh Space tokens and every pane project. Herdr supplies `HERDR_BIN_PATH`; the plugin uses it when present.
 
 Use the same Git vocabulary as the dots-managed Starship prompt:
 
@@ -55,7 +55,7 @@ The project uses `foreground_cwd` when available, then `cwd`. In Git, the label 
 
 Root discovery runs independently of Git status and upstream inspection. A successful root lookup still supplies the project when those other commands fail. Space Git tokens retain their failure-clearing behavior.
 
-Startup and full refresh update every snapshot pane, including inactive tabs and Workspaces. The focused Space watcher does not update `$project` in this version. Project labels can remain stale after a directory change until the next full refresh. Project metadata has no automatic expiry in this version.
+Startup, events, and polling update every snapshot pane, including inactive tabs and Workspaces. The watcher renews `$project` even when its value is unchanged. Project metadata has a finite lifetime, so labels expire after the producer stops. The lifetime is three times the sum of the configured poll interval and a conservative bound for a full serial refresh, capped at 24 hours. It accounts for the snapshot, Space scans, distinct pane directories, and metadata writes. A failed lookup falls back to the reported directory name. A failed metadata write or a disappearing pane does not prevent other targets from updating.
 
 ## Space tokens
 
@@ -94,11 +94,15 @@ herdr plugin action invoke refresh --plugin yersonargotev.tab-git
 herdr plugin action invoke clear --plugin yersonargotev.tab-git
 ```
 
-`refresh` scans every Space and pane, then resumes automatic Space updates. `clear` removes this plugin's Space tokens and pane project tokens. It pauses automatic updates until `refresh`. Other metadata remains intact.
+`refresh` scans every Space and pane, then resumes automatic updates. Startup and automatic events respect a previous pause. `clear` removes this plugin's Space tokens and pane project tokens. It pauses automatic updates until `refresh`. Other metadata remains intact.
 
 ## Refresh cost and limits
 
-Herdr plugin hooks have no file change event, and startup hooks are one-shot ([Herdr plugin documentation](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx)). The plugin starts one detached watcher per Herdr socket. It polls only the currently focused Space every three seconds, with serial Git reads and metadata writes. Focus hooks refresh immediately; startup and explicit refresh scan all Spaces. The watcher exits after three failed Herdr snapshots or when `clear` pauses it. Each poll costs one snapshot, the selected pane's Git commands, and one metadata update. A full refresh also runs one root lookup per distinct pane directory and one metadata update per pane. A large repository can delay a poll up to the configured command timeouts. Inactive Spaces update on startup, explicit refresh, and when focused; file changes in them can remain stale until then. An unexpected watcher crash can leave file changes stale until the next focus hook or manual refresh.
+Herdr plugin hooks have no directory-change event, and startup hooks are one-shot ([Herdr plugin documentation](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx)). The plugin starts one detached watcher per Herdr socket. It polls the focused Space and all pane projects at the configured interval, which defaults to three seconds. This interval is nominal. Serial commands and lock waits can delay visible updates.
+
+Each poll reads one snapshot, runs the focused Space's Git commands, and updates its metadata. It also runs one root-only lookup per distinct pane directory and updates each pane's project metadata. Inactive panes do not receive full Git-status scans merely to discover their projects. Startup, wide tab events, and explicit refresh scan all Spaces. Inactive Space Git tokens retain their existing refresh behavior.
+
+The same per-session lock serializes snapshot reads, metadata writes, and pause transitions. Overlapping refreshes read a fresh snapshot after they obtain the lock. `clear` pauses automatic publication until explicit `refresh`, including wide automatic events. The watcher exits after three failed Herdr snapshots or a pause. A failed write for one target does not end a reachable watcher. A watcher crash stops renewal, so project labels expire. A later hook or explicit refresh starts the watcher again.
 
 Run tests with `node --test test/*.test.js`. Set `STARSHIP_CONFIG` to the absolute
 path of the dots-managed Starship config to also compare rendered modules in

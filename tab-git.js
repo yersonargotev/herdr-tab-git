@@ -113,11 +113,13 @@ function snapshot(timeoutMs) {
   try { return JSON.parse(r.value).result.snapshot; } catch { return null; }
 }
 
-function report(scope, id, values, timeoutMs) {
+function report(scope, id, values, timeoutMs, ttlMs) {
   const args = [scope, "report-metadata", id, "--source", ID];
   for (const name of TOKEN_NAMES[scope]) args.push(values[name] === undefined ? "--clear-token" : "--token", values[name] === undefined ? name : `${name}=${values[name]}`);
+  if (ttlMs !== undefined) args.push("--ttl-ms", String(ttlMs));
   const r = run(herdrBin, args, process.cwd(), timeoutMs);
-  if (!r.ok) throw new Error(`metadata update failed: ${r.error}`);
+  if (!r.ok) console.error(`metadata update failed for ${scope} ${id}: ${r.error}`);
+  return r.ok;
 }
 
 function alive(pid) {
@@ -145,13 +147,18 @@ async function lock(task) {
   throw new Error("update lock timed out");
 }
 
-function refresh(wide = false, clear = false, fromWatcher = false) {
+function refresh(request = { kind: "automatic", wide: false }) {
   return lock(() => {
-    if (fromWatcher && fs.existsSync(path.join(stateDir, "paused"))) return true;
-    const timeout = config().timeoutMs;
+    const paused = path.join(stateDir, "paused");
+    const clear = request.kind === "clear";
+    if (clear) fs.writeFileSync(paused, "1");
+    else if (request.kind === "resume") fs.rmSync(paused, { force: true });
+    else if (fs.existsSync(paused)) return true;
+    const settings = config();
+    const timeout = settings.timeoutMs;
     const snap = snapshot(timeout);
     if (!snap) return false;
-    const targets = wide || clear ? snap.workspaces || [] : (snap.workspaces || []).filter((ws) => ws.workspace_id === snap.focused_workspace_id);
+    const targets = request.wide || clear ? snap.workspaces || [] : (snap.workspaces || []).filter((ws) => ws.workspace_id === snap.focused_workspace_id);
     for (const ws of targets) {
       let values = {};
       if (!clear) {
@@ -169,13 +176,15 @@ function refresh(wide = false, clear = false, fromWatcher = false) {
       }
       report("workspace", ws.workspace_id, values, timeout);
     }
-    if (wide || clear) {
-      const projects = new Map();
-      for (const pane of snap.panes || []) {
-        const cwd = pane.foreground_cwd || pane.cwd;
-        if (!clear && !projects.has(cwd)) projects.set(cwd, projectName(cwd, timeout));
-        report("pane", pane.pane_id, clear ? {} : { project: projects.get(cwd) }, timeout);
-      }
+    const panes = snap.panes || [];
+    const directories = new Set(panes.map((pane) => pane.foreground_cwd || pane.cwd).filter(Boolean));
+    const sweepCommands = 1 + 7 * (snap.workspaces || []).length + directories.size + panes.length;
+    const ttlMs = Math.min(86400000, 3 * (settings.pollMs + timeout * sweepCommands));
+    const projects = new Map();
+    for (const pane of panes) {
+      const cwd = pane.foreground_cwd || pane.cwd;
+      if (!clear && !projects.has(cwd)) projects.set(cwd, projectName(cwd, timeout));
+      report("pane", pane.pane_id, clear ? {} : { project: projects.get(cwd) }, timeout, clear ? undefined : ttlMs);
     }
     return true;
   });
@@ -202,29 +211,31 @@ async function watch() {
   const dir = path.join(stateDir, "watch.lock");
   try { fs.mkdirSync(dir); } catch { return; }
   fs.writeFileSync(path.join(dir, "pid"), String(process.pid));
-  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+  const cleanup = () => {
+    try {
+      if (Number(fs.readFileSync(path.join(dir, "pid"), "utf8")) === process.pid) fs.rmSync(dir, { recursive: true, force: true });
+    } catch {}
+  };
   process.on("SIGTERM", () => { cleanup(); process.exit(0); });
   process.on("exit", cleanup);
   let failures = 0;
   while (!fs.existsSync(path.join(stateDir, "paused"))) {
     await new Promise((resolve) => setTimeout(resolve, config().pollMs));
     if (fs.existsSync(path.join(stateDir, "paused"))) break;
-    try { failures = (await refresh(false, false, true)) ? 0 : failures + 1; } catch { failures++; }
+    try { failures = (await refresh()) ? 0 : failures + 1; } catch { failures++; }
     if (failures >= 3) break;
   }
+  cleanup();
+  if (failures < 3) startWatcher();
 }
 
 async function main() {
   if (!config().enabled) return;
   if (process.argv.includes("--watch")) return watch();
   fs.mkdirSync(stateDir, { recursive: true });
-  const clear = process.argv.includes("--clear");
-  const wide = process.argv.includes("--all");
-  if (clear) fs.writeFileSync(path.join(stateDir, "paused"), "1");
-  else if (wide) fs.rmSync(path.join(stateDir, "paused"), { force: true });
-  else if (fs.existsSync(path.join(stateDir, "paused"))) return;
-  await refresh(wide, clear);
-  if (!clear) startWatcher();
+  const kind = process.argv.includes("--clear") ? "clear" : process.argv.includes("--resume") ? "resume" : "automatic";
+  await refresh({ kind, wide: kind !== "automatic" || process.argv.includes("--all") });
+  if (kind !== "clear") startWatcher();
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exitCode = 1; });
