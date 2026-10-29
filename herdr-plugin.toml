@@ -1,6 +1,6 @@
 id = "yersonargotev.tab-git"
 name = "Tab Git Tokens"
-version = "1.4.0"
+version = "1.4.1"
 min_herdr_version = "0.9.5"
 description = "Space Git tokens and per-pane project labels for Agents"
 platforms = ["linux", "macos"]

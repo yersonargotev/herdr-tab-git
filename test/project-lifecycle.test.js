@@ -250,6 +250,59 @@ test("project leases renew unchanged labels then expire after producer stop", as
   assert.equal(f.read("pane", "w1:p1").foreign, "keep");
 });
 
+test("upgrades replace legacy watchers and keep projects renewing without focus events", async (t) => {
+  const f = fixture(t, true);
+  const repo = f.repo("project");
+  f.snapshot.workspaces = [];
+  f.snapshot.panes = [f.pane("w1:p1", "t1", repo)];
+  f.save();
+  const stateDir = path.join(f.env.HERDR_PLUGIN_STATE_DIR, createHash("sha256").update(f.env.HERDR_SOCKET_PATH).digest("hex").slice(0, 16));
+  const watchLock = path.join(stateDir, "watch.lock");
+  const readPid = () => { try { return Number(fs.readFileSync(path.join(watchLock, "pid"), "utf8")); } catch { return 0; } };
+  const legacyDir = path.join(f.dir, "legacy installation");
+  fs.mkdirSync(legacyDir);
+  fs.writeFileSync(path.join(legacyDir, "herdr-plugin.toml"), 'id = "yersonargotev.tab-git"\n');
+  // Pre-1.4 watchers had only a PID and never renewed pane metadata. Their exit
+  // handler removed the lock unconditionally, so replacement must await exit.
+  fs.writeFileSync(path.join(legacyDir, "tab-git.js"), `
+const fs = require('node:fs');
+const dir = ${JSON.stringify(watchLock)};
+fs.mkdirSync(dir, {recursive: true});
+fs.writeFileSync(dir + '/pid', String(process.pid));
+process.on('exit', () => fs.rmSync(dir, {recursive: true, force: true}));
+process.on('SIGTERM', () => process.exit(0));
+setInterval(() => {}, 1000);
+`);
+  const legacy = spawn(process.execPath, [path.join(legacyDir, "tab-git.js"), "--watch"], {stdio: "ignore"});
+  const exited = new Promise((resolve) => legacy.on("exit", resolve));
+  t.after(() => { if (legacy.exitCode === null) legacy.kill(); });
+  await eventually(() => readPid() === legacy.pid, "legacy watcher owns the session");
+  const a = f.launch(startup), b = f.launch(startup);
+  await Promise.all([a.result, b.result]);
+  const pid = readPid();
+  assert.ok(pid && pid !== legacy.pid);
+  await exited;
+  const first = f.raw("pane", "w1:p1").project;
+  await eventually(() => f.raw("pane", "w1:p1").project?.expires > first.expires, "replacement renews project without a focus event");
+  f.invoke(startup);
+  assert.equal(readPid(), pid, "same installation reuses the watcher");
+
+  // Subsequent upgrades also replace a watcher that already has an identity.
+  const nextDir = path.join(f.dir, "next installation");
+  fs.mkdirSync(nextDir);
+  for (const file of ["run.sh", "tab-git.js", "herdr-plugin.toml"]) fs.copyFileSync(path.join(pluginDir, file), path.join(nextDir, file));
+  const result = spawnSync("sh", [path.join(nextDir, "run.sh"), "--all"], {env: f.env, encoding: "utf8", timeout: 20000});
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(readPid() && readPid() !== pid, "new installation owns the watcher");
+  const next = f.raw("pane", "w1:p1").project;
+  await eventually(() => f.raw("pane", "w1:p1").project?.expires > next.expires, "new installation keeps polling");
+  const previousPid = readPid();
+  fs.appendFileSync(path.join(nextDir, "tab-git.js"), "\n// In-place plugin update.\n");
+  const edited = spawnSync("sh", [path.join(nextDir, "run.sh"), "--all"], {env: f.env, encoding: "utf8", timeout: 20000});
+  assert.equal(edited.status, 0, edited.stderr);
+  assert.ok(readPid() && readPid() !== previousPid, "code changes at the same path replace the watcher");
+});
+
 test("overlapping refreshes read fresh state in order and clear beats queued automatic events", async (t) => {
   const f = fixture(t);
   const first = f.repo("first"), second = f.repo("second");

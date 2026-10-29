@@ -17,6 +17,8 @@ const pluginStateDir = process.env.HERDR_PLUGIN_STATE_DIR || path.join(base, "pl
 const socketKey = createHash("sha256").update(process.env.HERDR_SOCKET_PATH || "default").digest("hex").slice(0, 16);
 const stateDir = path.join(pluginStateDir, socketKey);
 const herdrBin = process.env.HERDR_BIN_PATH || process.env.HERDR_BIN || "herdr";
+// Installation paths change on update; the digest also covers in-place edits.
+const watcherIdentity = createHash("sha256").update(__filename).update(fs.readFileSync(__filename)).digest("hex");
 
 function config() {
   let user = {};
@@ -133,7 +135,7 @@ async function lock(task) {
     try {
       fs.mkdirSync(dir);
       fs.writeFileSync(path.join(dir, "pid"), String(process.pid));
-      try { return task(); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+      try { return await task(); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
       let pid = 0;
@@ -190,20 +192,53 @@ function refresh(request = { kind: "automatic", wide: false }) {
   });
 }
 
-function startWatcher() {
-  if (fs.existsSync(path.join(stateDir, "paused"))) return;
-  const dir = path.join(stateDir, "watch.lock");
-  let stale = false;
+function isPluginWatcher(pid) {
+  // A lock may outlive its process and its PID may be reused. Check the actual
+  // command and adjacent manifest before signalling even a legacy watcher.
+  const command = run("ps", ["-p", String(pid), "-o", "command="], process.cwd(), 1500);
+  const match = command.ok && command.value.trim().match(/^(.+?\/node|node) (.+) --watch$/);
+  if (!match || path.basename(match[1]) !== "node" || path.basename(match[2]) !== "tab-git.js") return false;
   try {
-    const pid = Number(fs.readFileSync(path.join(dir, "pid"), "utf8"));
-    if (pid && alive(pid)) return;
-    stale = Boolean(pid);
-  } catch {}
-  try {
-    if (stale || Date.now() - fs.statSync(dir).mtimeMs > 2000) fs.rmSync(dir, { recursive: true, force: true });
-  } catch {}
-  const child = spawn(process.execPath, [__filename, "--watch"], { detached: true, stdio: "ignore", env: process.env });
-  child.unref();
+    return /^id = "yersonargotev\.tab-git"$/m.test(fs.readFileSync(path.join(path.dirname(match[2]), "herdr-plugin.toml"), "utf8"));
+  } catch { return false; }
+}
+
+async function startWatcher() {
+  // Serialize replacement with publications and other hooks. In particular,
+  // wait for legacy exit handlers to remove their lock before creating ours.
+  return lock(async () => {
+    if (fs.existsSync(path.join(stateDir, "paused"))) return;
+    const dir = path.join(stateDir, "watch.lock");
+    let stale = false;
+    try {
+      const pid = Number(fs.readFileSync(path.join(dir, "pid"), "utf8"));
+      stale = Boolean(pid);
+      if (pid && alive(pid)) {
+        let identity;
+        try { identity = fs.readFileSync(path.join(dir, "identity"), "utf8"); } catch {}
+        if (identity === watcherIdentity || !isPluginWatcher(pid)) return;
+        process.kill(pid, "SIGTERM");
+        const deadline = Date.now() + 5000;
+        while (alive(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+        if (alive(pid)) throw new Error("previous watcher did not exit");
+      }
+    } catch (e) { if (e.code !== "ENOENT" && e.code !== "ESRCH") throw e; }
+    try {
+      if (stale || Date.now() - fs.statSync(dir).mtimeMs > 2000) fs.rmSync(dir, { recursive: true, force: true });
+    } catch {}
+    const child = spawn(process.execPath, [__filename, "--watch"], { detached: true, stdio: "ignore", env: process.env });
+    child.unref();
+    // Wait for ownership before allowing the next hook to inspect the lock.
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try {
+        const pid = Number(fs.readFileSync(path.join(dir, "pid"), "utf8"));
+        if (pid === child.pid && fs.readFileSync(path.join(dir, "identity"), "utf8") === watcherIdentity) return;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error("watcher did not start");
+  });
 }
 
 async function watch() {
@@ -211,6 +246,7 @@ async function watch() {
   const dir = path.join(stateDir, "watch.lock");
   try { fs.mkdirSync(dir); } catch { return; }
   fs.writeFileSync(path.join(dir, "pid"), String(process.pid));
+  fs.writeFileSync(path.join(dir, "identity"), watcherIdentity);
   const cleanup = () => {
     try {
       if (Number(fs.readFileSync(path.join(dir, "pid"), "utf8")) === process.pid) fs.rmSync(dir, { recursive: true, force: true });
@@ -226,7 +262,7 @@ async function watch() {
     if (failures >= 3) break;
   }
   cleanup();
-  if (failures < 3) startWatcher();
+  if (failures < 3) await startWatcher();
 }
 
 async function main() {
@@ -235,7 +271,7 @@ async function main() {
   fs.mkdirSync(stateDir, { recursive: true });
   const kind = process.argv.includes("--clear") ? "clear" : process.argv.includes("--resume") ? "resume" : "automatic";
   await refresh({ kind, wide: kind !== "automatic" || process.argv.includes("--all") });
-  if (kind !== "clear") startWatcher();
+  if (kind !== "clear") await startWatcher();
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exitCode = 1; });
