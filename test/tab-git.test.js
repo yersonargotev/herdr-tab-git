@@ -120,7 +120,7 @@ fs.writeFileSync(p,JSON.stringify(s));
   };
   save();
   assert.equal(call("--all", "--clear").status, 0);
-  assert.equal(call("--all").status, 0);
+  assert.equal(call("--all", "--resume").status, 0);
   assert.equal(read().w1.gituntracked, "?1");
   assert.equal(read().w2.gituntracked, "?1");
   assert.equal(read().w1.tab_name, "codex · dots");

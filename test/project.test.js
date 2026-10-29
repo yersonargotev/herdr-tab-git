@@ -45,6 +45,11 @@ const seen = new Set();
 state.tokens[scope][id] ||= {};
 for (let i = 5; i < args.length; i += 2) {
   const [flag, value] = args.slice(i, i + 2);
+  if (flag === '--ttl-ms') {
+    assert.equal(scope, 'pane');
+    assert.ok(Number(value) > 0 && Number(value) <= 86400000);
+    continue;
+  }
   assert.ok(['--token', '--clear-token'].includes(flag));
   const at = value.indexOf('=');
   const name = flag === '--token' ? value.slice(0, at) : value;
